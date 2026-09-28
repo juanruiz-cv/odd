@@ -1,0 +1,77 @@
+# CargoOps — FASE 2: Authentication + RBAC (EPIC-002)
+
+- Feature: `cargoops-fase2-auth-rbac`
+- Estado: **EN CURSO** (iniciado 2026-09-24 tras decisión delegada del usuario: "lo que te parezca mejor"; actualizado 2026-09-25)
+- Fuentes canónicas: MASTER-SPEC §8/§10/§11.2 · ADR-008 (JWT+refresh) · ADR-009 (RBAC) · AUTHORIZATION.md §5.2/5.3/5.4 · PHASES.md §6 · BUSINESS-RULES BR-009..012/018
+- Depende de: FASE 1 (cerrada 2026-09-24) · Bloqueos: ninguno
+
+## Objetivo
+
+Implementar PHASE 2 completo: autenticación JWT access + refresh rotativo (ADR-008) y RBAC con 3 roles y permisos granulares (ADR-009/AUTHORIZATION.md), seed de la matriz §8, guards backend deny-by-default, auditoría LOGIN/LOGOUT y seguridad base (helmet, CORS, sanitización). El frontend agrega login + guard UX + interceptor de refresh + logout (UX únicamente, BR-009).
+
+## Alcance autorizado
+
+- **backend**: `src/{auth,audit}` nuevos, `prisma/schema.prisma` (+ modelo `RefreshToken`), `prisma/seed.ts` (+ roles/permisos/usuarios dev), `src/app.setup.ts` (validation, helmet, CORS), deps auth.
+- **frontend**: `src/{services/auth, guards, interceptors, pages/login, state}` según estructura existente.
+- **NO tocar**: decisiones canónicas MASTER-SPEC/OPEN-QUESTIONS; fases 3+; infra.
+
+## Decisiones registradas (concisas)
+
+1. **bcryptjs** (cost 12) por compatibilidad multiplataforma/alpine (sin build nativo) — ADR-008 permite bcrypt cost ≥ 12. (deps auth, T1)
+2. **Refresh en cookie HttpOnly Secure SameSite=Strict**, path `/api/v1/auth`, `secure` solo en producción (dev http local).
+3. **Guards custom con `JwtService` directo** (sin passport): `JwtAuthGuard` + `PermissionsGuard` globales vía `APP_GUARD`, `@Public()` y `@RequirePermissions(...)`; deny-by-default (sin decorador de permiso → 403) salvo `@Public` (AUTHORIZATION §5.4).
+4. **JWT snapshot claims**: `sub` (userId), `roles[]`, `permissions[]` (unión de bundles, A6), `jti`, `iat/exp`; TTL 15 min; firma HS256 con `JWT_SECRET`.
+5. **RefreshToken**: token opaco random (32 bytes base64url), hash SHA-256 en DB, rotación en cada refresh, detección de reuso → revoca todos los refresh del usuario.
+6. **Rate limit**: login/refresh 5/min/IP vía `@nestjs/throttler`.
+7. **Auditoría**: `AuditAction.LOGIN`/`LOGOUT` con entity=`user`, entityId=userId, ip+userAgent+requestId (ADR-010).
+8. **Rutas de prueba para guards**: controller de prueba solo en el harness e2e (no inventar API de producción fuera de MASTER-SPEC §10).
+9. **Dev users seed** (provisional): `admin/operator/viewer` con password dev documentado (`DevPass123!`, local/dev only — no es verdad operacional; re-correr seed resetea campos seed-managed), para probar login y T4.
+10. **Delivery**: chained PRs `stacked-to-main` — backend PR-1 (auth core T1), backend PR-2 (RBAC + auditoría + seguridad T2/T3/T5), frontend PR-3 (T4). Estimación >400 líneas → aplicar skill chained-pr al crear PRs.
+11. **Subagentes degradados** (provider free-tier: "0k free tier can only be used from within OpenCode", 2 fallos + 1 aborto — igual que F1-06) → **implementación inline acotada**; delegación intentada y registrada, sin reintento. NOTA P2-T2: el subagente de mapping **sí funcionó** (free-tier OK) — mapeo de matriz delegado y exitoso; verificación canónica posterior inline.
+12. **S1 resuelto (2026-09-25, decisión de usuario)**: refresh en **cookie HttpOnly Secure SameSite=Strict** (ADR-008 + SECURITY.md §5.1) — NO `refreshToken` en body JSON como decía API.md. Implica alinear docs (P2-T6). Errores de aplicación vía `AppException` (ERROR-HANDLING §4.2); filtro alineado al catálogo (400 `VALIDATION_ERROR`, 429 `RATE_LIMITED`, códigos custom respetados).
+13. **`.prettierrc` endOfLine auto**: el worktree es CRLF (Windows autocrlf) y `format:check` exigía LF en TODO el repo (roto pre-existente; CI en Linux pasaba). Fix de config, no reformatea nada.
+14. **Drift de migración `init`** (editada post-apply en F1 para el índice `UPPER(code)`) → se resolvió con `prisma migrate reset` (dev DB solo tenía seed reproducible).
+15. **P2-T2: corrección de conteo canónico (OQ-018/A1, resuelta)**: el catálogo SEMBRADO es **25 permisos** = tabla AUTHORIZATION §5.2 (23) + `cargo.to_rezago`/`cargo.to_secuestro` (BR-046/OQ-030). El "23" de la planificación era la cuenta de la tabla §5.2 sin los 2 de BR-046. La feature doc anterior decía "23 (incl. BR-046)" — impreciso; el seed y los tests usan 25 y documentan la cita.
+16. **P2-T2: resoluciones de inconsistencias doc internas** (no de scope de negocio; OQ-019/030 ya resueltas): (a) **OPERATOR SÍ tiene `audit.read`** — MASTER-SPEC §8 + OQ-019 lo requieren (auditoría propia); §5.3 lo omitía (stale) → bundle = 16. (b) **`cargo.to_rezago` ∈ OPERATOR+ADMIN, `cargo.to_secuestro` ∈ solo ADMIN** (BR-046/OQ-030). (c) Seed usa solo grants positivos (AUTHORIZATION §5.1 recomendación); los ADMIN_ONLY son ausencia de grant, no `granted:false`.
+17. **P2-T3: implementación de guards** (AUTHORIZATION §5.4): `JwtAuthGuard` recarga el usuario de la DB en CADA request (active/deleted_at, §5.4 paso 1 — no confía en claims para estado); `PermissionsGuard` compara contra el **snapshot de claims del JWT** (paso 3); `@RequirePermissions` ahora **acumula alternativas** en el handler (cambió de SetMetadata a decorador custom; AND por decorador, OR apilando 2º decorador — W5). `@Public()` agregado a **HealthController** (lista canónica §5.4). Rutas probe SOLO en harness e2e (`GuardsProbeController`, decisión 8). `GET /api/v1` root (AppController hello, starter) queda **403 deny-by-default** sin cobertura — honesto, no se toca. seed e2e: aserciones ahora scope por código (paralelismo vitest puede crear fixtures concurrentes).
+18. **P2-T5: seguridad base en `configureApp`** (API-CONVENTIONS §4.13): `helmet()` al tope (elimina `X-Powered-By`, headers seguros default); `enableCors({ origin: CORS_ORIGINS env, comma-separated, default dev `http://localhost:4200` (Angular sin port explícito en angular.json), credentials: true, methods GET/POST/PATCH/PUT/DELETE/OPTIONS, allowedHeaders Content-Type/Authorization/X-Request-Id/X-Correlation-Id/Idempotency-Key, exposedHeaders X-Request-Id/X-RateLimit-Remaining/X-RateLimit-Limit/Location/Deprecation/Sunset/Content-Disposition })`. **Sin wildcard con credentials** (SECURITY.md §5.1); el `X-RateLimit-*` del convention se representa con los headers reales del throttler (Remaining/Limit). ValidationPipe ya existía global (no se tocó). Auditoría ya era append-only desde T1 (ADR-010: `record()` único método público) → T5 = verificación e2e + garantía de mapeo (unit) + hardening. Fallo de test inicial: `typeof null === 'object'` (superagent no envía User-Agent por default) → se envía `User-Agent` explícito y se aserta la propagación exacta; envelope `{ data: ... }` en respuestas (SuccessEnvelopeInterceptor).
+19. **P2-T4: frontend auth (UX, BR-009)** — Angular 22 standalone zoneless strict: `API_BASE_URL = http://localhost:3000/api/v1` (core/api.config, dev default; sin environments files en el scaffold); `AuthService` con `{ withCredentials: true }` en login/refresh/logout (cookie refresh HttpOnly) y mapeo `response.data` → session; `AuthStore` signals (user/accessToken/status/isAuthenticated, login/refresh/logout/clear); `authGuard` funcional refresh-aware → UrlTree `/login`; `authInterceptor` con Bearer, refresh single-flight (`shareReplay` + `finalize`), 1 retry con `HttpContextToken` anti-loop, exclusión de `/auth/*` del retry, clear+redirect si refresh falla; `LoginPage` standalone con ReactiveForms typed + signals + copy es-AR neutral (backend `error.message` con fallback genérico), ruta `login` FUERA del layout, layout con `canActivate`, header de sesión con logout ("Cerrar sesión"). Fix pre-existente: `.prettierrc` frontend sin `endOfLine: auto` → 14 archivos imitaban el defecto del backend (decisión 13) → se agregó `endOfLine: auto` (solo config, nada reformateado).
+
+## Tasks (IDs canónicos P2-Tk)
+
+- [x] **P2-T1** — Auth backend core: RefreshToken (schema+migración), módulo auth (login/refresh/logout), hashing bcryptjs, rate limit login/refresh. Checks: unidades + e2e login/refresh/logout (rotación + reuso), lint, format, build. **DONE 2026-09-25.**
+- [x] **P2-T2** — Seed RBAC: catálogo **25 permisos** (AUTHORIZATION §5.2 → 23 + BR-046 → 2; canónico OQ-018/A1), bundles VIEWER/OPERATOR/ADMIN (§5.3 + MASTER-SPEC §8 + OQ-019/030), usuarios dev. Checks: idempotencia; tests BR-010/011/012 contra matriz. **DONE 2026-09-25** (commit `b33f842` en `feat/p2-rbac-security`).
+- [x] **P2-T3** — Guards backend: `JwtAuthGuard` (valida JWT + `active` + `deletedAt`, 401) y `PermissionsGuard` (deny-by-default, 403), `@Public`, `@RequirePermissions`; aplicados a rutas de prueba. Checks: e2e 401/403 (BR-009). **DONE 2026-09-25** (commit `ad48a05` en `feat/p2-rbac-security`).
+- [x] **P2-T4** — Frontend auth: login screen, auth service + store, guard de UX, interceptor con refresh y logout. Checks: build + lint frontend; login fluye contra API real. **DONE 2026-09-25** (commit `899c10e` en `feat/p2-frontend-auth`, pushed).
+- [x] **P2-T5** — Auditoría LOGIN/LOGOUT + seguridad base: AuditService (append-only), helmet, CORS configurado, ValidationPipe global. Checks: e2e audit log registra sesiones; headers de seguridad presentes. **DONE 2026-09-25** (commit `60d502e` en `feat/p2-rbac-security`; helmet era el único faltante — ValidationPipe ya existía; la auditoría se verifica ahora e2e/unit).
+- [x] **P2-T6** — Alinear docs al transporte por cookie (decisión S1): API.md §4.1-4.3 (refresh en cookie, logout sin body + `tokenType`), API-CONVENTIONS.md L160 + CORS, BACKEND-ARCHITECTURE §5.1, SECURITY.md S1 → RESUELTA (cookie). **DONE 2026-09-25** — aclaración: cargoops-docs NO es repo git (solo carpeta: backend/frontend/infrastructure son los repos) → cambios aplicados en filesystem + evidencia en mirror Engram, sin commit local.
+
+## Estado por tarea / evidencia
+
+| Task | Estado | Evidencia |
+| --- | --- | --- |
+| P2-T1 | done 2026-09-25 | unit 13/13; e2e 12/12 (auth 10): login 200 cookie HttpOnly SameSite=Strict, INVALID_CREDENTIALS (sin enumeración), USER_INACTIVE 403, VALIDATION_ERROR 400, rotación+reuso → REFRESH_TOKEN_REVOKED (revoca sesión), logout idempotente, 429 RATE_LIMITED. lint 0 · format:check 0 · build ok. Migración `add_refresh_tokens` aplicada. |
+| P2-T2 | done 2026-09-25 | commit `b33f842` (4 archivos: seed-rbac.ts/seed-rbac.spec.ts/seed.ts/test seed.e2e-spec.ts; rama `feat/p2-rbac-security` pushed). unit 19/19 (6 nuevos: catálogo 25 único, VIEWER=8 readonly BR-010, OPERATOR=16 BR-011/OQ-019/030 incl. to_rezago+audit.read sin to_secuestro, ADMIN=25 BR-012/046, bundles solo codes conocidos, dev users únicos); e2e 16/16 (4 nuevos: convergencia 25/3/49, idempotencia 2ª corrida, dev users bcrypt+rol, matriz DB ADMIN 25/OPERATOR sin admin-only); lint 0 · format 0 · build 0 · `npm run db:seed` × 2 = conteos idénticos (17 locations, 25 perms, 3 roles, 49 role_permissions, 3 dev users). |
+| P2-T3 | done 2026-09-25 | commit `ad48a05` (9 archivos: guards/jwt-auth.guard.ts + permissions.guard.ts + authenticated-request.ts + spec, auth.module APP_GUARD x2 orden, decorator acumula OR, health @Public, probe e2e). unit 24/24 (+5 PermissionsGuard: public, deny-by-default, AND, OR, sin identity); e2e 25/25 (+9 probe: public 200, 401 sin token/inválido/expirado/usuario inactivo, deny-by-default 403 FORBIDDEN, cargo.read 200, AND viewer 403/admin 200, OR settings 200/viewer 403); lint 0 · format 0 · build 0. seed e2e scoped por código (paralelismo). |
+| P2-T4 | done 2026-09-25 | commit `899c10e` (16 archivos, 581+/4−: core/api.config.ts, services/auth{model,service}, state/auth.store.ts, guards/auth.guard.ts, interceptors/auth.interceptor.ts, pages/login×3, app.config provideHttpClient(withInterceptors), app.routes login, main-layout routes canActivate + header sesión/logout, .prettierrc endOfLine auto). unit 2/2 (scaffold); lint 0 · format clean (con fix endOfLine) · build ok. **Prueba manual contra API real** (backend corriendo, Origin http://localhost:4200): LOGIN 200 → ACAO 4200 + ACAC true + Set-Cookie refresh_token + data.accessToken; REFRESH 200 (rotación cookie); LOGOUT 200 {success:true, revoked:true}. |
+| P2-T5 | done 2026-09-25 | commit `60d502e` (5 archivos: package.json/lock +helmet ^8.3.0, app.setup.ts helmet+CORS, audit.service.spec.ts nuevo unit, security.e2e-spec.ts nuevo e2e; rama `feat/p2-rbac-security` pushed). unit 28/28 (+4 AuditService: 1 create() con mapeo exacto, previous/newValue, fallbacks null/{}/undefined, retorno id+timestamp); e2e 30/30 (+5 security: login → fila LOGIN entity=user/entityId/ip/userAgent='security-e2e-agent'/metadata.requestId string, logout → 1 fila LOGOUT + 2º idempotente sin fila, failed login NO audita (count before/after, sin señal de enumeración), headers helmet (x-content-type-options nosniff, x-frame-options SAMEORIGIN, referrer-policy, sin x-powered-by), CORS preflight permitido localhost:4200 + credentials / denegado https://evil.example); lint 0 · format 0 · build 0. |
+| P2-T6 | done 2026-09-25 | API.md §4.1-4.3 (cookie transport + tokenType), API-CONVENTIONS L160/CORS, BACKEND-ARCHITECTURE §5.1, SECURITY S1 → RESUELTA. cargoops-docs sin repo git → filesystem + Engram. |
+
+## Checks aplicables
+
+- Backend: `npm run lint` · `npm run format:check` · `npm run build` · `npm test` · `npm run test:e2e` (requiere postgres dev corriendo) · `npx prisma migrate dev` (drift).
+- Frontend: `npm run lint` · `npm run build` (Angular).
+- CI: PRs verdes en GitHub Actions (backend + frontend).
+- RDD: **off (clone-local)** — no iniciar review nativo.
+
+## Delivery / slice boundaries
+
+| PR | Rama | Contenido | Estado |
+| --- | --- | --- | --- |
+| [PR-1](https://github.com/juanruiz-cv/cargoops-backend/pull/2) | `feat/p2-auth-core` | T1 auth core (commit `266c7d4`; 1359 authored líneas; **size:exception aceptado** por el usuario 2026-09-25) | **MERGED 2026-09-25** (squash `5889fdf` en `main` backend) |
+| [PR-2](https://github.com/juanruiz-cv/cargoops-backend/pull/3) | `feat/p2-rbac-security` (base `feat/p2-auth-core` → rebase a `main`) | T2 (`b33f842`→`fb1710e`) + T3 (`ad48a05`→`1818443`) + T5 (`60d502e`→`5c6d1c8`) | **MERGED 2026-09-25** (squash `fd402cc`; recuperado tras auto-close por borrado de base) |
+| [PR-3](https://github.com/juanruiz-cv/cargoops-frontend/pull/2) | `feat/p2-frontend-auth` (base `main`) | T4 (`899c10e`; 581+/4−) | **MERGED 2026-09-25** (squash `f02384b` en `main` frontend) |
+
+## Próximo paso
+
+**FASE 2 (EPIC-002) COMPLETA — 2026-09-25.** T1-T6 done; PR-1/PR-2 backend y PR-3 frontend **mergidos a `main`** (squash: `5889fdf`, `fd402cc`, `f02384b`). Nota corazón del merge: el squash de PR-1 con borrado de rama base **auto-cerró el PR-2** (GitHub no permite reabrir sin base); se recreó la base en el commit original, reabrió, retargeteó a `main`, rebaseó `--onto origin/main 266c7d4` (diff limpio 1564+/17−) y force-push; CI re-verde; mergeado con squash; rama base recreada borrada. En el próximo flujo chained: **retargetear/rebascar el PR hijo ANTES de borrar la rama base del padre** (o conservar la base hasta mergear el hijo). Siguiente fase: FASE 3 según PHASES.md (decisión del usuario). Mirrors Engram **sincronizados 2026-09-25** (proyecto `cargoops-backend`, topics `odd/cargoops-fase2-auth-rbac/tasks` obs 54 y `/delivery` obs 58) tras resolver el cwd ambiguo moviendo la sesión al repo backend; session summary obs 64.
