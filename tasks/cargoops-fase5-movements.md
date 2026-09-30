@@ -91,4 +91,7 @@ Forecast total estimado: backend ~1900–2900 líneas + frontend ~400–600 → 
 5. Gate de residuo ahora cubre más filas (cargoPartialId/unitSectorId en countFixtures).
 
 ## Próximo paso
-**F5 backend COMPLETO — main = `09e3e48`** (T1/T2/T3/T5/T6/T7/T8 mergeados vía PRs #10/#11/#12/#13/#14, todos CI verde). **Arrancar FE T4 (UI)** → rama `feat/p5-movements-ui` sobre main `09e3e48`. Estándares OpenAPI/Storybook entregados en cargoops-docs (working tree, repo sin git) con implementación pendiente de decisión.
+**F5 backend COMPLETO — main = `09e3e48`** (T1/T2/T3/T5/T6/T7/T8 mergeados vía PRs #10/#11/#12/#13/#14, todos CI verde). **Arrancar FE T4 (UI)** → rama `feat/p5-movements-ui` sobre main `09e3e48`.
+
+## Docs deuda — Swagger/OpenAPI
+- **OPENAPI.md / Swagger: IMPLEMENTADO y MERGEADO** — PR #15 (`ecec677` el 2026-09-28). `SwaggerModule` en `/api/v1/docs`, 14 tags, `@ApiProperty` en 21 DTOs + 6 controladores, response DTOs como `class`, `SwaggerModule` en `/api/v1/docs` condicional (`NODE_ENV !== 'production' || SWAGGER_ENABLED=true`). CI VERDE PR #15.
