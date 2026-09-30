@@ -99,3 +99,15 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
 - Trigger evidence: mapping trigger (backend module + 4+ files + docs, satisfied by explore worker
   2026-09-30); writer trigger (each task touches 2+ non-trivial files).
 - Orchestrator gatekeeper: artifact readback + spot-check after each writer, per ODD.
+
+## Progress
+
+- 2026-09-30: feature doc created (commit `4da3d94`, odd repo). Backend branch `feat/f5-pending-intake`
+  created from origin/main `ecec677` (clean worktree, NO commits yet). T1 writer launched and
+  INTERRUPTED (subagent aborted by user) — T1/T2/T3 all pending. Mapping (explore worker) and contract
+  resolution (ESC-010: flag persistent per location, ADMIN enables / OPERATOR executes → no new
+  permission, no req threading) are DONE and recorded in the mirror.
+- NEXT: resume T1 on branch `feat/f5-pending-intake` with the writer prompt from the session
+  (extract `assertCapacityFits` → `src/locations/capacity.guard.ts`, `CreateCargoDto.locationId?` XOR
+  `truckId`, `CargoService.create` STORED + initial ACTIVE CargoLocation, NO Movement row, then T2
+  BR-036, then T3 docs sync), then ask the user about next phase.
