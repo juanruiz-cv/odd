@@ -77,12 +77,16 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
 
 ## Tasks
 
-- [ ] **T1 — GAP A alta directa a sector (intake con locationId)** — `CreateCargoDto.locationId?`
+- [x] **T1 — GAP A alta directa a sector (intake con locationId)** — `CreateCargoDto.locationId?`
       exclusive with `truckId`; `CargoService.create` → STORED + initial ACTIVE CargoLocation (BR-032),
       validations BR-004/035/036 in-tx, no Movement row; state-machine comment update; unit + e2e specs.
       Acceptance: `POST /cargos` with `locationId` → 201 cargo `STORED` + 1 segment ACTIVE; without →
       behavior unchanged (REGISTERED/IN_TRUCK); invalid location 404 (BR-003); inactive 409; capacity
       refused over ceiling; no Movement row created; spec state-machine L507-547 adjusted to new semantics.
+      ✅ Commits `c7c375d` (refactor guard), `c0d0eff` (intake), `258044c` (tests) on
+      `feat/f5-pending-intake`; 412/412 unit, lint 0 err (18 baseline), build OK; e2e spec compiles
+      (not run — no local Postgres). Decisions: D-92 (422 intake contract-compliant), D-93
+      (receive.guard.ts new — file-cycle cargo⇄locations), D-94 below.
 - [ ] **T2 — GAP B BR-036 enforce** — `DESTINATION_SELECT` + `assertCapacityFits` type widened;
       ceiling per flag/limit; distinct over-limit detail; accepted-above-100% writes audited
       `CAPACITY_CHANGE` exception with metadata; JSDoc updated; movement.service.spec L1569-1590 inverted
@@ -107,7 +111,30 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
   INTERRUPTED (subagent aborted by user) — T1/T2/T3 all pending. Mapping (explore worker) and contract
   resolution (ESC-010: flag persistent per location, ADMIN enables / OPERATOR executes → no new
   permission, no req threading) are DONE and recorded in the mirror.
-- NEXT: resume T1 on branch `feat/f5-pending-intake` with the writer prompt from the session
-  (extract `assertCapacityFits` → `src/locations/capacity.guard.ts`, `CreateCargoDto.locationId?` XOR
-  `truckId`, `CargoService.create` STORED + initial ACTIVE CargoLocation, NO Movement row, then T2
-  BR-036, then T3 docs sync), then ask the user about next phase.
+- 2026-09-30 (resume): T1 ✅ DONE + verified (commits `c7c375d`, `c0d0eff`, `258044c`; 412/412 unit,
+  lint 0 err / 18 baseline, build OK, parent spot check re-ran `npm run test`). T1's partial work from
+  the interrupted session was recovered: the guard refactor already existed uncommitted → verified
+  (lint/test/build) → committed `c7c375d`. Branch now ahead 3 of origin/main, NOT yet pushed (push
+  pending; PR = user decision).
+- NEXT: T2 (BR-036 enforce) on new branch `feat/f5-pending-overoccupation` (chained stacked-to-main,
+  after slice 1 merges — see Delivery strategy), then T3 docs sync, then ask user about next phase.
+
+## Decisions (T1 verification, accepted)
+
+- **D-92 — BR-044 intake answers 422, movements answers 409 (deliberate, contract-compliant).** The
+  movements path raises 409 `INVALID_TRANSITION` per the general convention (API.md §5.2 L15); the
+  intake endpoint is documented as "422 si la ubicación provista no admite el estado inicial" (API.md
+  §5.2 L85), which is exactly what `assertIntakeLocationType` raises. The PREDICATE is shared with the
+  state machine (`isLocationTypeAllowedForStatus` → `STATUS_LOCATION_TYPES`), so the rule cannot drift —
+  only the HTTP spelling differs per endpoint contract. Same pair: 404 unknown locationId (BR-003),
+  409 inactive (BR-004, general convention), 422 type-not-admitting-STORED (BR-044, §5.2).
+- **D-93 — `receive.guard.ts` new (writer decision, accepted).** Injecting `LocationsService` into
+  `CargoService` would create a FILE-level cycle: `locations.service.ts` imports `CARGO_NOT_DELETED`
+  from `cargo.service.ts`, so the two modules evaluate each other → TDZ fatal at boot. Resolution:
+  BR-004 extracted to `src/locations/receive.guard.ts` (plain leaf module, same pattern as
+  `capacity.guard.ts`); both writers (`MovementService`, `CargoService`) import it. Module graph stays
+  cargo → movements → locations (never back). Full rationale in the guard's JSDoc.
+- **D-94 — T2 must widen BOTH projections.** `INTAKE_LOCATION_SELECT` (`cargo.service.ts` L118,
+  created by T1) duplicates `movement.service`'s `DESTINATION_SELECT` (L256); with BR-036 enforcement
+  both must add `allowOverOccupation` + `overOccupationLimitPercent` or the intake and movement paths
+  would apply different ceilings to the same location. T2 scope explicitly includes both.
