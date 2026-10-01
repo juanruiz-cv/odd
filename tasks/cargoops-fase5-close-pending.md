@@ -87,15 +87,25 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
       `feat/f5-pending-intake`; 412/412 unit, lint 0 err (18 baseline), build OK; e2e spec compiles
       (not run — no local Postgres). Decisions: D-92 (422 intake contract-compliant), D-93
       (receive.guard.ts new — file-cycle cargo⇄locations), D-94 below.
-- [ ] **T2 — GAP B BR-036 enforce** — `DESTINATION_SELECT` + `assertCapacityFits` type widened;
+- [x] **T2 — GAP B BR-036 enforce** — `DESTINATION_SELECT` + `assertCapacityFits` type widened;
       ceiling per flag/limit; distinct over-limit detail; accepted-above-100% writes audited
       `CAPACITY_CHANGE` exception with metadata; JSDoc updated; movement.service.spec L1569-1590 inverted
       + flag matrix; e2e ESC-010/TC-068 pattern.
       Acceptance: flag off → 409 at 100% (unchanged); flag on → allowed up to +10%, refused above;
       accepted over-capacity write audits exception; unbounded (capacity 0) unchanged.
-- [ ] **T3 — Docs sync (D-64 reconciliation)** — DTOs.md §4.4/§5.1, API.md §5.2, OPENAPI, VALIDATION
+      ✅ Commits `453eadd` (guard+enforcement+audit wiring), `e804412` (flag matrix specs) on
+      `feat/f5-pending-overoccupation`; 423/423 unit (+11), lint 0 err (18 baseline), build OK;
+      worktree clean, branch pushed. Both projections widened (D-94 closed): movement L268-269 +
+      cargo L134. `assertCapacityFits` returns `{ crossedCapacity: boolean }` as the audit signal,
+      consumed by all 5 movement paths and the intake. Over-limit refusal names the real CEILING
+      (not the declared capacity) + `details.overOccupation`.
+- [x] **T3 — Docs sync (D-64 reconciliation)** — DTOs.md §4.4/§5.1, API.md §5.2, OPENAPI, VALIDATION
       §8 #10, USE-CASES FA-2, DATABASE.md L417, PHASES L219. Acceptance: no doc claims a contract the
       code refuses; FA-2 has a real endpoint; D-64 closed in feature doc.
+      ✅ Commits `5c0a221` (backend intake docs), `b1acd89` (BR-036 + VALIDATION §8), `346f872` (QA
+      contracts) DIRECT to `main` in cargoops-docs; 11 files, +64/-26, worktree clean. D-64 CLOSED:
+      the doc/code split on the intake and on BR-036 is reconciled. Every documented error code
+      traced to a real `super(...)` call by the writer.
 
 ## Route declaration
 
@@ -118,6 +128,37 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
   pending; PR = user decision).
 - NEXT: T2 (BR-036 enforce) on new branch `feat/f5-pending-overoccupation` (chained stacked-to-main,
   after slice 1 merges — see Delivery strategy), then T3 docs sync, then ask user about next phase.
+- 2026-09-30 (T2): T2 ✅ DONE + verified. Writer was interrupted mid-task; its work was recovered and
+  verified by the orchestrator: commit `453eadd` (feature) had landed, the three spec files were
+  uncommitted → Prettier + `npm run test` 423/423 + lint 0 err + build OK → committed `e804412`.
+  Branch `feat/f5-pending-overoccupation` pushed, worktree clean. NEXT: T3 docs sync.
+- D-95: the guard returns `{ crossedCapacity }` as an AUDIT SIGNAL rather than performing the audit
+  itself — `capacity.guard.ts` is a plain leaf module with no `AuditService` (same reason the capacity
+  family audit lives in the services). `movement.service.ts` has one reusable
+  `recordOverOccupationAudit` helper (L2142) for all 5 write paths; the intake records the same
+  `CAPACITY_CHANGE` row from `cargo.service.ts`. Audit rows use `entityType: 'location'` (the
+  LOCATION is what went over, not the cargo — AUDIT.md §5.1).
+
+## Outcome (feature CLOSED 2026-10-01)
+
+- **T1 ✅** `feat/f5-pending-intake` — commits `c7c375d`, `c0d0eff`, `258044c` (pushed, UNMERGED).
+- **T2 ✅** `feat/f5-pending-overoccupation` — commits `453eadd`, `e804412` (pushed, UNMERGED).
+- **T3 ✅** cargoops-docs `main` — commits `5c0a221`, `b1acd89`, `346f872` (direct to main, pushed).
+- All functional checks green: 423/423 unit, lint 0 errors (18 baseline warnings), build OK. e2e
+  compiles; e2e execution is CI-only (no local Postgres, D-68). Native RDD unavailable in this runtime
+  → assess registers `unavailable`, never an invented PASS.
+- **PR creation + merge = USER decision.** Slice 1 must merge before slice 2 (stacked-to-main).
+- **D-64 CLOSED.**
+
+## Findings for the next session (not in this feature's scope)
+
+- `OPEN-QUESTIONS.md` ID-003 still reads "RESUELTA: sin `locationId` en el alta" — stale now (the
+  intake has one). One-cell fix in cargoops-docs.
+- MASTER-SPEC §8 item 16 / BR-036 and VALIDATION §8 #4/#14 name the code `INCOMPATIBLE_UNIT` while the
+  code throws `UNIT_INCOMPATIBLE` (ERROR-HANDLING §4.9 agrees with the code). Fixing docs alone would
+  leave MASTER-SPEC contradicting them — needs a canonical-spec decision, out of scope here.
+- `DTOs.md` §4.4 still lists `description` on `CreateCargoDto`; the shipped DTO deliberately omits it
+  (no column; FASE 3 shipped no migration). Backend JSDoc flags it as a pending decision.
 
 ## Decisions (T1 verification, accepted)
 
