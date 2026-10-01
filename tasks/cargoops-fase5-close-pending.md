@@ -139,16 +139,27 @@ Close the two deferred functional gaps of FASE 5 (Movements) that the phase left
   `CAPACITY_CHANGE` row from `cargo.service.ts`. Audit rows use `entityType: 'location'` (the
   LOCATION is what went over, not the cargo — AUDIT.md §5.1).
 
-## Outcome (feature CLOSED 2026-10-01)
+## Outcome (feature CLOSED and MERGED 2026-10-01)
 
-- **T1 ✅** `feat/f5-pending-intake` — commits `c7c375d`, `c0d0eff`, `258044c` (pushed, UNMERGED).
-- **T2 ✅** `feat/f5-pending-overoccupation` — commits `453eadd`, `e804412` (pushed, UNMERGED).
-- **T3 ✅** cargoops-docs `main` — commits `5c0a221`, `b1acd89`, `346f872` (direct to main, pushed).
-- All functional checks green: 423/423 unit, lint 0 errors (18 baseline warnings), build OK. e2e
-  compiles; e2e execution is CI-only (no local Postgres, D-68). Native RDD unavailable in this runtime
-  → assess registers `unavailable`, never an invented PASS.
-- **PR creation + merge = USER decision.** Slice 1 must merge before slice 2 (stacked-to-main).
-- **D-64 CLOSED.**
+- **T1 ✅ MERGED** — PR [#16](https://github.com/juanruiz-cv/cargoops-backend/pull/16) → `main` `81ca2cc`
+  (squash of `c7c375d`, `c0d0eff`, `258044c` + e2e fix `9c3431f`).
+- **T2 ✅ MERGED** — PR [#17](https://github.com/juanruiz-cv/cargoops-backend/pull/17) → `main` `890c333`
+  (squash of `39cd241`, `b7e2c7d`; rebuilt onto merged main after #16, so the PR carried T2 only).
+- **T3 ✅** cargoops-docs `main` — commits `5c0a221`, `b1acd89`, `346f872` (direct to main).
+- All functional checks green on merged `main`: 423/423 unit, lint 0 errors (18 baseline warnings),
+  build OK. CI green on both PRs including **e2e against Postgres (251 tests)**.
+- **D-64 CLOSED.** Both feature branches deleted (local + remote); repo is on `main` only.
+- Native RDD unavailable in this runtime → assess registers `unavailable`, never an invented PASS.
+
+### Merge-time finding (D-96): the e2e assertion CI caught, local checks could not
+
+Slice 1's first CI run failed e2e with `expected 90 to be 90 // Object.is equality`:
+`cargo.e2e-spec.ts` asserted `expect(occupancy._sum.quantity).toBe(90)` on a `Decimal` column —
+the aggregate returns a `Prisma.Decimal`, so `toBe` compared an object to a number. It compiled
+and `npm run test` was green (no local Postgres, D-68): **only CI with a real database exposed
+it.** Fixed with `.toNumber()`, the pattern the movements e2e already uses for every quantity
+assertion (commit `9c3431f`). Lesson: unit tests cannot validate anything that only breaks against a
+real DB, so the e2e gate is load-bearing for a "done" claim, not a formality.
 
 ## Findings for the next session (not in this feature's scope)
 
