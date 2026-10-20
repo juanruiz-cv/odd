@@ -144,6 +144,9 @@ Los docs se contradicen entre sí. El código sigue estas decisiones y **no se e
 - [x] P6-T4 Accesibilidad: teclado, ARIA, listado alternativo equivalente. **6D**
 - [x] P6-T5 Performance: capas, memoización, lazy render. **6D**
 
+12. **Versionar los untracked de `odd/tasks/` - RESUELTO (2026-10-20).** Habia 10 archivos untracked (el tracker de PHASE 6 entre ellos: vivia solo en disco). Se versionaron en **dos commits separados por linea de trabajo**, para no mezclar procedencias: `1d9656b` (`docs(odd): version the rebuild line feature documents`, 7 archivos, 1460 inserciones - phase2..6 + rebuild-from-zero + handoff/2026-10-07) y `af0b829` (`docs(odd): version the Track line documents with a provenance header`, 4 archivos, 1013 inserciones - pre-rebuild + handoff/2026-10-01). Los 4 de Track llevan un header `DOCUMENTO DE LA LINEA TRACK - NO ES BASELINE DEL REBUILD` porque citan PRs/commits **no verificables en este clon**. Repo `odd` quedo **limpio, cero untracked**. Sin pushear.
+13. **Pendiente D - `MASTER-SPEC.md:109` (`CapacityType`/`UNLIMITED`) - RESUELTO (2026-10-20).** Commit `43e0bd3` en `cargoops-docs` (`docs(master-spec): close the CapacityType/UNLIMITED drift in the canonical enums`). La seccion 4.3 se **contradecia dentro de una misma linea**: declaraba `QuantityUnit` con 6 valores y despues decia "`CapacityType` queda alineado: ... `UNLIMITED` ...", reintroduciendo el septimo. **Ninguno de los dos existe en el codigo**: `prisma/schema.prisma` declara `QuantityUnit` con exactamente 6 valores y no tiene `CapacityType`; la capacidad ilimitada es `capacity <= 0` (`capacity.calculator.ts:138`, `capacity-alert.service.ts:107`, con tests que citan D11). Los otros 6 archivos del corpus **ya lo decian bien** (`DATABASE.md:372`/`:540`, `DTOs.md:170`, `COMPONENTS.md:154`, `I18N.md:96`) - **MASTER-SPEC era el unico que quedo atras**. Ahora es consistente con ellos. Efecto colateral: `WriteAllLines` agrego el newline final que el archivo no tenia (1 byte, sin impacto semantico). **D11 cerrada en su origen.** Sin pushear.
+
 ## Punto de retorno (para retomar)
 
 > **Última actualización: 2026-10-20 (cierre de sesión — FASE 6 CERRADA).**
@@ -154,8 +157,8 @@ Los docs se contradicen entre sí. El código sigue estas decisiones y **no se e
 | `cargoops-backend` | `develop` | `271c74e` | **limpio** | ninguno |
 | `cargoops-frontend` | `develop` | `72ef7a2` | **limpio** | ninguno |
 | `cargoops-infrastructure` | `develop` | `4c78c11` | limpio | ninguno |
-| `cargoops-docs` | `docs/resolve-spec-code-drift-2` | `d8f63d5` | limpio | **SI** (`origin` = juanruiz-cv/cargoops-docs) |
-| `odd` | `main` | `abe5067` | 10 untracked en `tasks/` + `handoff/` (ver nota) | **SI** (`origin` = juanruiz-cv/odd) |
+| `cargoops-docs` | `docs/resolve-spec-code-drift-2` | `43e0bd3` | **limpio** | **SI** (`origin` = juanruiz-cv/cargoops-docs) |
+| `odd` | `main` | `af0b829` | **limpio** (todo versionado) | **SI** (`origin` = juanruiz-cv/odd) |
 
 - **`main` intacto** en todos (frontend `72b40c2`, backend y infra sin tocar desde el scaffold).
 - **Ninguna rama sin mergear a `develop`** en backend ni frontend (`git branch --no-merged develop` vacío).
