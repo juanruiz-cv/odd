@@ -162,7 +162,7 @@ Los docs se contradicen entre sí. El código sigue estas decisiones y **no se e
 | `cargoops-frontend` | `develop` | `ab3d6ee` | **limpio** | ninguno |
 | `cargoops-infrastructure` | `develop` | `4c78c11` | limpio | ninguno |
 | `cargoops-docs` | `main` | `157a613` | limpio | **SI** - **MERGEADO** (PR #8 squash, rama borrada) |
-| `odd` | `main` | `809a34b` | limpio | **SI** - **PUSHEADO** (`main` == `origin/main` @ `809a34b`) |
+| `odd` | `main` | `5f40dff` | limpio | **SI** - **PUSHEADO** (`main` == `origin/main`) |
 
 - **`main` intacto** en todos (frontend `72b40c2`, backend y infra sin tocar desde el scaffold).
 - **Ninguna rama sin mergear a `develop`** en backend ni frontend (`git branch --no-merged develop` vacío).
